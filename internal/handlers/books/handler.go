@@ -4,7 +4,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Handler represents a handler for book-related HTTP requests.
+// Handler represents a handler for HTTP requests.
 type Handler struct {
 	db *gorm.DB
 }

@@ -12,3 +12,7 @@ type Book struct {
 	Created time.Time `gorm:"created" json:"created"`
 	Updated time.Time `gorm:"updated" json:"updated"`
 }
+
+func (b *Book) GetDBTableName() string {
+	return "books"
+}

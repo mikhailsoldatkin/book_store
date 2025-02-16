@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gorilla/mux"
+
 	"github.com/mikhailsoldatkin/book_store/internal/config"
 	"github.com/mikhailsoldatkin/book_store/internal/handlers/books"
 
@@ -123,19 +125,20 @@ func (a *App) initServiceProvider(_ context.Context) error {
 }
 
 // initHTTPServer initializes the HTTP server and sets up request handlers.
-func (a *App) initHTTPServer(ctx context.Context) error {
-	mux := http.NewServeMux()
+func (a *App) initHTTPServer(_ context.Context) error {
+	muxRouter := mux.NewRouter()
 	dbClient := a.serviceProvider.DBClient()
 
 	// add handlers
 	booksHandler := books.NewHandler(dbClient)
 
 	// register handlers
-	mux.HandleFunc("/books", booksHandler.List)
+	muxRouter.HandleFunc("/books", booksHandler.List)
+	muxRouter.HandleFunc("/books/{id:[0-9]+}", booksHandler.Get)
 
 	a.httpServer = &http.Server{
 		Addr:              a.serviceProvider.config.HTTP.Address,
-		Handler:           mux,
+		Handler:           muxRouter,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
