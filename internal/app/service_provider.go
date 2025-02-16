@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/mikhailsoldatkin/book_store/internal/closer"
 	"github.com/mikhailsoldatkin/book_store/internal/config"
@@ -37,14 +38,19 @@ func (s *serviceProvider) Config() *config.Config {
 // DBClient returns the database client instance.
 func (s *serviceProvider) DBClient() *gorm.DB {
 	if s.dbClient == nil {
-		s.initDBClient()
+		s.dbClient = s.initDBClient()
 	}
+
 	return s.dbClient
 }
 
 // initDBClient initializes the database connection.
-func (s *serviceProvider) initDBClient() {
-	db, err := gorm.Open(postgres.Open(s.Config().DB.DSN), &gorm.Config{})
+func (s *serviceProvider) initDBClient() *gorm.DB {
+	gormConfig := &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info), // log all SQL queries
+	}
+
+	db, err := gorm.Open(postgres.Open(s.Config().DB.DSN), gormConfig)
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
@@ -56,6 +62,7 @@ func (s *serviceProvider) initDBClient() {
 
 	closer.Add(sqlDB.Close)
 
-	s.dbClient = db
 	log.Println("connected to database successfully")
+
+	return db
 }

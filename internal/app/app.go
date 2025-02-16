@@ -2,22 +2,19 @@ package app
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
-
-	"github.com/mikhailsoldatkin/book_store/internal/config"
-	"github.com/mikhailsoldatkin/book_store/internal/handlers/books"
+	"gorm.io/gorm"
 
 	"github.com/mikhailsoldatkin/book_store/internal/closer"
+	"github.com/mikhailsoldatkin/book_store/internal/config"
+	"github.com/mikhailsoldatkin/book_store/internal/handlers"
 )
 
 // App represents the application with its dependencies and gRPC, HTTP and Swagger servers.
@@ -48,45 +45,21 @@ func (a *App) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 
 	wg := &sync.WaitGroup{}
-	wg.Add(1) // add more later ...
+	wg.Add(1)
 
 	go func() {
 		defer wg.Done()
 
-		err := a.runHTTPServer()
-		if err != nil {
+		if err := a.runHTTPServer(); err != nil {
 			log.Fatalf("failed to run HTTP server: %v", err)
 		}
 	}()
 
-	gracefulShutdown(ctx, cancel, wg)
+	cancel()
+
+	wg.Wait()
 
 	return nil
-}
-
-// gracefulShutdown handles the termination process by waiting for either a context cancellation
-// or termination signals. It cancels the context and waits for all goroutines to finish.
-func gracefulShutdown(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
-	select {
-	case <-ctx.Done():
-		slog.Info("terminating: context cancelled")
-	case <-waitSignal():
-		slog.Info("terminating: via signal")
-	}
-
-	cancel()
-	if wg != nil {
-		wg.Wait()
-	}
-}
-
-// waitSignal creates a channel to receive termination signals (SIGINT, SIGTERM).
-// It returns the channel to allow waiting for these signals.
-func waitSignal() chan os.Signal {
-	sigterm := make(chan os.Signal, 1)
-	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
-
-	return sigterm
 }
 
 // initDeps initializes the dependencies required by the App.
@@ -97,9 +70,8 @@ func (a *App) initDeps(ctx context.Context) error {
 		a.initHTTPServer,
 	}
 
-	for _, f := range inits {
-		err := f(ctx)
-		if err != nil {
+	for _, fun := range inits {
+		if err := fun(ctx); err != nil {
 			return err
 		}
 	}
@@ -109,8 +81,7 @@ func (a *App) initDeps(ctx context.Context) error {
 
 // initConfig loads the application configuration.
 func (a *App) initConfig(_ context.Context) error {
-	_, err := config.Load()
-	if err != nil {
+	if _, err := config.Load(); err != nil {
 		return err
 	}
 
@@ -126,15 +97,9 @@ func (a *App) initServiceProvider(_ context.Context) error {
 
 // initHTTPServer initializes the HTTP server and sets up request handlers.
 func (a *App) initHTTPServer(_ context.Context) error {
-	muxRouter := mux.NewRouter()
-	dbClient := a.serviceProvider.DBClient()
+	db := a.serviceProvider.DBClient()
 
-	// add handlers
-	booksHandler := books.NewHandler(dbClient)
-
-	// register handlers
-	muxRouter.HandleFunc("/books", booksHandler.List)
-	muxRouter.HandleFunc("/books/{id:[0-9]+}", booksHandler.Get)
+	muxRouter := initRouter(db)
 
 	a.httpServer = &http.Server{
 		Addr:              a.serviceProvider.config.HTTP.Address,
@@ -145,12 +110,26 @@ func (a *App) initHTTPServer(_ context.Context) error {
 	return nil
 }
 
+// initRouter initializes mux.Router
+func initRouter(db *gorm.DB) *mux.Router {
+	router := mux.NewRouter()
+
+	for _, r := range handlers.Routes {
+		router.
+			Methods(r.Method).
+			Path(r.Pattern).
+			Name(r.Name).
+			HandlerFunc(handlers.WrapHandler(db, r.Handler))
+	}
+
+	return router
+}
+
 // runHTTPServer starts the HTTP server and listens for incoming requests.
 func (a *App) runHTTPServer() error {
-	slog.Info("HTTP server is running on", "address", a.httpServer.Addr)
+	slog.Info(fmt.Sprintf("HTTP server is running on %s", a.httpServer.Addr))
 
-	err := a.httpServer.ListenAndServe()
-	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := a.httpServer.ListenAndServe(); err != nil {
 		return err
 	}
 

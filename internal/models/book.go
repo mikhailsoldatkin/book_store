@@ -4,6 +4,7 @@ import (
 	"time"
 )
 
+// Book model
 type Book struct {
 	ID      uint      `json:"id" gorm:"primaryKey"`
 	Title   string    `gorm:"title" json:"title"`
