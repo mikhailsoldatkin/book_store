@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:17.3-alpine3.21
+    container_name: ${APP_NAME}_db
+    ports:
+      - ${DB_PORT}:${DB_PORT}
+    env_file:
+      - .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: always
+
+  migrator:
+    build:
+      context: ..
+      dockerfile: migrator.Dockerfile
+    container_name: ${MIGRATOR_NAME}
+    env_file:
+      - .env
+    restart: on-failure
+
+volumes:
+  pgdata:
